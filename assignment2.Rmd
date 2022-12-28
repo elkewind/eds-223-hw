@@ -1,0 +1,289 @@
+---
+title: 'EDS 223: assignment 2'
+author: "Elke Windschitl"
+date: "2022-10-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## introduction
+
+The following exercises are modified from [Chapters 3](https://geocompr.robinlovelace.net/attr.html), [4](https://geocompr.robinlovelace.net/spatial-operations.html), [5](https://geocompr.robinlovelace.net/geometry-operations.html) of Geocomputation with R by Rovin Lovelace. Each question lists the total number of points. The breakdown of points can be found at the end of each instruction in parentheses. A general grading rubric can be found on the [course website](https://ryoliver.github.io/EDS_223_spatial_analysis/assignments.html).
+
+Please update "author" to list your first and last names and any collaborators (e.g. Ruth Oliver, Friend1, Friend2).
+
+**Due by midnight on Saturday 2022-10-22**
+
+## prerequisites
+
+```{r load, include=TRUE, message=FALSE, warning=FALSE}
+# add required packages here
+library(sf)
+library(spData)
+library(tmap)
+library(tidyverse)
+library(rmapshaper)
+```
+
+## question 1
+
+##### 5 points
+
+Find the states that:(2.5)\
+- belong to the West region\
+- have an area below 250,000 square kilometers\
+- and greater than 5,000,000 residents in 2015
+
+```{r include=TRUE}
+# Note: it looks like Alaska and Hawaii are not included here. I am not sure why, but this means they won't be included in my analysis.
+# Change area from class units to class numeric
+us_states$AREA <- as.numeric(us_states$AREA)
+
+# Filter for the West region
+target_states <- us_states %>% 
+  filter(REGION == "West") %>% 
+  # Filter for area
+  filter(AREA < 250000) %>% 
+  # Filter for population
+  filter(total_pop_15 > 5000000)
+print(target_states)
+
+print(paste0("The only state that meets the above parameters is ", target_states$NAME))
+```
+
+What was the total population of the US in 2015? (2.5)
+
+```{r include=TRUE}
+# Find the sum of the populations
+total_pop <- sum(us_states$total_pop_15)
+# Print a statement
+print(paste0("The total population of the continental US in 2015 was ", total_pop, " people."))
+```
+
+## question 2
+
+##### 5 points
+
+Create a new variable named "us_states_stats" by adding variables from "us_states_df" to "us_states". (3)
+
+-   Which function did you use and why? (0.5)
+-   Which variable is the key variable in both datasets? (0.5)
+-   What is the class of the new object? (0.5)
+-   Why does us_states_df have 2 more rows than us_states? (0.5)
+
+```{r include=TRUE}
+# Rename us_states state NAME to state
+us_states <- us_states %>% 
+  rename(state = NAME)
+# Join the data frames
+us_states_stats <- left_join(us_states, us_states_df, by = "state")
+class(us_states_stats)
+
+print("I used left_join because us_states doesn't include Alaska and Hawaii, but us_states_df does. The way the question was worded 'adding variables from us_states_df to us_states' made me think I should keep all observations from us_states and add only the relevant info from us_states_df to the already existing rows in us_states.")
+
+print("The key variable in us_states was NAME but I changed it to state to match us_states_df. So, state was the key here.")
+
+print("The class of the new object is an sf data frame.")
+
+print("As I mentioned above, us_states_df has two more rows than us_states because it includes Alaska and Hawaii.")
+```
+
+## question 3
+
+##### 10 points
+
+Make a map of the percent change in population density between 2010 and 2015 in each state. Map should include a legend that is easily readable. (7)
+
+```{r include=TRUE}
+# Add a column with the percent change of population for every state
+us_states_stats <- us_states_stats %>% 
+  mutate(pop_change = ((total_pop_15 - total_pop_10)/total_pop_10 * 100), na.rm = TRUE)
+
+# Create a map showing the percent change of every state's pop
+tm_shape(us_states_stats) +
+  tm_polygons(col = "pop_change",
+              title = "% change in population") +
+  tm_layout(legend.text.size = 0.5,
+            legend.title.size = 0.8,
+            legend.position = c(0.8, 0.05),
+            main.title = "Percent change in population of the US states between 2010 and 2015",
+            main.title.size = 1.2)
+```
+
+In how many states did population density decrease? (3)
+
+```{r include=TRUE}
+# Filter for states with negative population change
+decreased <- us_states_stats %>% 
+  filter(pop_change < 0)
+# Print a statement
+print(paste0(length(decreased$state), " states had population density decreases. These states were ", decreased$state[1], " and ", decreased$state[2], "."))
+
+```
+
+## question 4
+
+##### 10 points
+
+How many of New Zealand's high points are in the Canterbury region? (5)
+
+```{r include=TRUE}
+# Find all high points in Canterbury
+# Filter for the region Canterbury and make an object
+canterbury <- nz %>% 
+  filter(Name == "Canterbury")
+
+# Take the high points from Canterbury only
+c_height <- nz_height[canterbury,]
+# Print a statement
+print(paste0(length(c_height$t50_fid), " high points are in the Canterbury region"))
+```
+
+Which region has the second highest number of "nz_height" points? And how many does it have? (5)
+
+```{r include=TRUE}
+# Join the regional nz data to the height points using a left join
+region_points <- st_join(nz_height, nz, left = TRUE)
+# Count the points in each region
+counts <- as.data.frame(table(region_points$Name)) %>% 
+  arrange(desc(Freq))
+# Print a statement
+print(paste0("The region with the second highest number of nz_height points is ", counts[2,1], ", and it has ", counts[2,2], " high points within it."))
+```
+
+## question 5
+
+##### 15 points
+
+Create a new object representing all of the states the geographically intersect with Colorado.(5)\
+Hint: use the "united_states" dataset. The most concise way to do this is with the subsetting method "[".\
+Make a map of the resulting states. (2.5)
+
+```{r include=TRUE}
+# Create the object colorado
+colorado <- us_states %>% 
+  filter(state == "Colorado")
+# Create an object of colorado and all of its neighbors
+co_neighbors <- us_states[colorado,]
+# Map colorado and its neighbors
+tm_shape(co_neighbors) +
+  tm_polygons(col = "#02146e") +
+  tm_layout(main.title = "Colorado and its Neighbors") +
+  tm_text(text = "state",
+          size = 0.6)
+```
+
+Create another object representing all the objects that touch (have a shared boundary with) Colorado and plot the result.(5)\
+Hint: remember you can use the argument op = st_intersects and other spatial relations during spatial subsetting operations in base R).\
+Make a map of the resulting states. (2.5)
+
+```{r include=TRUE}
+# Create an object of the states that touch CO
+touching_co <- us_states[colorado, op = st_touches]
+# Map the states that touch CO
+tm_shape(touching_co) +
+  tm_polygons(col = "#ffda0a") +
+  tm_layout(main.title = "Colorado's Neighbors") +
+  tm_text(text = "state",
+          size = 0.6)
+```
+
+## question 6
+
+##### 10 points
+
+Generate simplified versions of the "nz" dataset. Experiment with different values of keep (ranging from 0.5 to 0.00005) for **ms_simplify()** and dTolerance (from 100 to 100,000) **st_simplify()**. (5)
+
+Map the results to show how the simplification changes as you change values.(5)
+
+```{r include=TRUE}
+# Simplify with keep of 0.5 with ms_simplify()
+nz_simp <- ms_simplify(nz, keep = 0.5)
+tm_shape(nz_simp) +
+  tm_polygons()
+# Simplitfy with keep of 0.00005 with ms_simplify()
+nz_simp2 <- ms_simplify(nz, keep = 0.00005)
+tm_shape(nz_simp2) +
+  tm_polygons()
+
+# Simplify with dTolerance of 100 with st_simplify()
+nz_simp3 <- st_simplify(nz, preserveTopology = TRUE, dTolerance = 100)
+tm_shape(nz_simp3) +
+  tm_polygons()
+# Simplify with dTolerance of 100,000 with st_simplify()
+nz_simp4 <- st_simplify(nz, preserveTopology = TRUE, dTolerance = 100000)
+tm_shape(nz_simp4) +
+  tm_polygons()
+
+# The last one shows an error at this large dTolerance. I'm guessing I've smoothed so much that some polygons no longer exist. Forcing the polygons to remain intact with preserveTopology = TRUE seemed to work
+```
+
+## question 7
+
+##### 10 points
+
+How many points from the "nz_height" dataset are within 100km of the Canterbury region?
+
+```{r include=TRUE}
+# Create the 100K buffer, NZGD2000 is measured in meters
+buff <- st_buffer(canterbury, dist = 100000)
+
+# Plot the buffer vs Canterbury
+tm_shape(buff) +
+  tm_polygons() +
+  tm_shape(canterbury) +
+  tm_borders()
+
+# Take the height points from this buffer zone
+buff_height <- nz_height[buff,]
+
+#Plot
+tm_shape(buff) +
+  tm_polygons() +
+  tm_shape(nz) +
+  tm_borders() +
+  tm_shape(buff_height) + 
+  tm_dots(col = "red") +
+  tm_scale_bar()
+
+#Print a statement
+print(paste0(length(buff_height$t50_fid)," height points are within 100km of Canterbury"))
+```
+
+## question 8
+
+##### 15 points
+
+Find the geographic centroid of the country of New Zealand. How far is it from the geographic centroid of Canterbury?
+
+```{r include=TRUE}
+# Find Canterbury's centriod
+cant_centroid <- st_centroid(canterbury$geom)
+
+# View the centriod
+tm_shape(canterbury) +
+  tm_polygons() +
+  tm_shape(cant_centroid) +
+  tm_dots()
+
+# Find NZ centroid
+NZ <- st_union(nz)
+nz_centroid <- st_centroid(NZ)
+
+# View the centroid
+tm_shape(NZ) +
+  tm_polygons() +
+  tm_shape(nz_centroid) +
+  tm_dots() +
+  tm_shape(cant_centroid) +
+  tm_dots(col = 'red')
+
+# Find the distance between the two centroids
+dist <- st_distance(nz_centroid, cant_centroid)
+dist
+# Print a statement
+print(paste0("The distance between New Zealand's centroid and Canterbury's centroid is ", round(dist/1000), " kilometers."))
+```
