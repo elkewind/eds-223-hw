@@ -1,1 +1,1 @@
-# eds-223-hw
+# EDS 223 Geospatial Analysis and Remote Sensing Homework
